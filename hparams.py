@@ -1,11 +1,14 @@
-import tensorflow as tf
 from text import symbols
 
+class HParamsAlternative(dict):
+    def __init__(self, *args, **kwargs):
+        super(HParamsAlternative, self).__init__(*args, **kwargs)
+        self.__dict__ = self
 
 def create_hparams(hparams_string=None, verbose=False):
     """Create model hyperparameters. Parse nondefault from given string."""
 
-    hparams = tf.contrib.training.HParams(
+    hparams = HParamsAlternative(
         ################################
         # Experiment Parameters        #
         ################################
@@ -27,7 +30,7 @@ def create_hparams(hparams_string=None, verbose=False):
         load_mel_from_disk=False,
         training_files='filelists/ljs_audio_text_train_filelist.txt',
         validation_files='filelists/ljs_audio_text_val_filelist.txt',
-        text_cleaners=['english_cleaners'],
+        text_cleaners=['basic_cleaners'],
 
         ################################
         # Audio Parameters             #
@@ -86,10 +89,10 @@ def create_hparams(hparams_string=None, verbose=False):
     )
 
     if hparams_string:
-        tf.logging.info('Parsing command line hparams: %s', hparams_string)
+        print('Parsing command line hparams: %s', hparams_string)
         hparams.parse(hparams_string)
 
     if verbose:
-        tf.logging.info('Final parsed hparams: %s', hparams.values())
+        print('Final parsed hparams: %s', hparams.values())
 
     return hparams
