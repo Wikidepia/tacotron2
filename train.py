@@ -184,6 +184,10 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
         output_directory, log_directory, rank)
 
     train_loader, valset, collate_fn = prepare_dataloaders(hparams)
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer,
+                                                    hparams.max_lr,
+                                                    epochs=hparams.epochs,
+                                                    steps_per_epoch=len(train_loader))
 
     # Load checkpoint if one exists
     iteration = 0
@@ -234,6 +238,7 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
                     model.parameters(), hparams.grad_clip_thresh)
 
             optimizer.step()
+            scheduler.step()
 
             if not is_overflow and rank == 0:
                 duration = time.perf_counter() - start
