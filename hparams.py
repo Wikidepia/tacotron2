@@ -77,6 +77,11 @@ def create_hparams(hparams_string=None, verbose=False):
         postnet_kernel_size=5,
         postnet_n_convolutions=5,
 
+        # Regotron loss
+        use_regotron_loss=False,
+        regotron_delta=0.1,
+        regotron_w_align=0.1,
+
         ################################
         # Optimization Hyperparameters #
         ################################

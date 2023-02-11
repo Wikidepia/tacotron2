@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 
 from model import Tacotron2
 from data_utils import TextMelLoader, TextMelCollate
-from loss_function import Tacotron2Loss
+from loss_function import Tacotron2Loss, Tacotron2LossAligned
 from logger import Tacotron2Logger
 from hparams import create_hparams
 
@@ -178,7 +178,10 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
     if hparams.distributed_run:
         model = apply_gradient_allreduce(model)
 
-    criterion = Tacotron2Loss()
+    if hparams.use_regotron_loss:
+        criterion = Tacotron2LossAligned(hparams.regotron_delta, hparams.regotron_w_align)
+    else:
+        criterion = Tacotron2Loss()
 
     logger = prepare_directories_and_logger(
         output_directory, log_directory, rank)
