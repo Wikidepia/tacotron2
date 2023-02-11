@@ -118,7 +118,7 @@ def save_checkpoint(model, optimizer, learning_rate, iteration, filepath):
                 'learning_rate': learning_rate}, filepath)
 
 
-def validate(model, criterion, align_loss, valset, iteration, batch_size, n_gpus,
+def validate(model, criterion, use_align_loss, valset, iteration, batch_size, n_gpus,
              collate_fn, logger, distributed_run, rank):
     """Handles all the validation scoring and printing"""
     model.eval()
@@ -133,7 +133,7 @@ def validate(model, criterion, align_loss, valset, iteration, batch_size, n_gpus
             x, y = model.parse_batch(batch)
             y_pred = model(x)
 
-            if align_loss:
+            if use_align_loss:
                 input_lengths = x[1]
                 output_lengths = x[-1]
                 taco_loss, align_loss = \
@@ -143,7 +143,7 @@ def validate(model, criterion, align_loss, valset, iteration, batch_size, n_gpus
                 loss = criterion(y_pred, y)
 
             if hparams.distributed_run:
-                if align_loss:
+                if use_align_loss:
                     reduced_val_align_loss = \
                         reduce_tensor(align_loss.data, n_gpus).item()
                     reduced_val_loss = \
@@ -151,17 +151,17 @@ def validate(model, criterion, align_loss, valset, iteration, batch_size, n_gpus
                 else:
                     reduced_val_loss = reduce_tensor(loss.data, n_gpus).item()
             else:
-                if align_loss:
+                if use_align_loss:
                     reduced_val_align_loss = align_loss.item()
                     reduced_val_loss = taco_loss.item()
                 else:
                     reduced_val_loss = loss.item()
             val_loss += reduced_val_loss
-            if align_loss:
+            if use_align_loss:
                 val_align_loss += reduced_val_align_loss
 
         val_loss = val_loss / (i + 1)
-        if align_loss:
+        if use_align_loss:
             val_align_loss = val_align_loss / (i + 1)
 
     model.train()
