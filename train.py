@@ -118,7 +118,7 @@ def save_checkpoint(model, optimizer, learning_rate, iteration, filepath):
                 'learning_rate': learning_rate}, filepath)
 
 
-def validate(model, criterion, valset, iteration, batch_size, n_gpus,
+def validate(model, criterion, align_loss, valset, iteration, batch_size, n_gpus,
              collate_fn, logger, distributed_run, rank):
     """Handles all the validation scoring and printing"""
     model.eval()
@@ -132,18 +132,42 @@ def validate(model, criterion, valset, iteration, batch_size, n_gpus,
         for i, batch in enumerate(val_loader):
             x, y = model.parse_batch(batch)
             y_pred = model(x)
-            loss = criterion(y_pred, y)
-            if distributed_run:
-                reduced_val_loss = reduce_tensor(loss.data, n_gpus).item()
+
+            if align_loss:
+                input_lengths = x[1]
+                output_lengths = x[-1]
+                taco_loss, align_loss = \
+                    criterion(y_pred, y, input_lengths, output_lengths)
+                loss = taco_loss + align_loss
             else:
-                reduced_val_loss = loss.item()
+                loss = criterion(y_pred, y)
+
+            if hparams.distributed_run:
+                if align_loss:
+                    reduced_val_align_loss = \
+                        reduce_tensor(align_loss.data, n_gpus).item()
+                    reduced_val_loss = \
+                        reduce_tensor(taco_loss.data, n_gpus).item()
+                else:
+                    reduced_val_loss = reduce_tensor(loss.data, n_gpus).item()
+            else:
+                if align_loss:
+                    reduced_val_align_loss = align_loss.item()
+                    reduced_val_loss = taco_loss.item()
+                else:
+                    reduced_val_loss = loss.item()
             val_loss += reduced_val_loss
+            if align_loss:
+                val_align_loss += reduced_val_align_loss
+
         val_loss = val_loss / (i + 1)
+        if align_loss:
+            val_align_loss = val_align_loss / (i + 1)
 
     model.train()
     if rank == 0:
-        print("Validation loss {}: {:9f}  ".format(iteration, val_loss))
-        logger.log_validation(val_loss, model, y, y_pred, iteration)
+        print("Validation loss {}: {:9f} Align loss: {:9f}  ".format(iteration, val_loss, val_align_loss))
+        logger.log_validation(val_loss, val_align_loss, model, y, y_pred, iteration)
 
 
 def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
@@ -178,8 +202,8 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
     if hparams.distributed_run:
         model = apply_gradient_allreduce(model)
 
-    if hparams.use_regotron_loss:
-        criterion = Tacotron2LossAligned(hparams.regotron_delta, hparams.regotron_w_align)
+    if hparams.use_align_loss:
+        criterion = Tacotron2LossAligned(hparams.delta_align, hparams.weight_align)
     else:
         criterion = Tacotron2Loss()
 
@@ -221,11 +245,30 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
             x, y = model.parse_batch(batch)
             y_pred = model(x)
 
-            loss = criterion(y_pred, y)
-            if hparams.distributed_run:
-                reduced_loss = reduce_tensor(loss.data, n_gpus).item()
+            if hparams.use_align_loss:
+                input_lengths = x[1]
+                output_lengths = x[-1]
+                taco_loss, align_loss = \
+                    criterion(y_pred, y, input_lengths, output_lengths)
+                loss = taco_loss + align_loss
             else:
-                reduced_loss = loss.item()
+                loss = criterion(y_pred, y)
+
+            if hparams.distributed_run:
+                if hparams.use_align_loss:
+                    reduced_align_loss = \
+                        reduce_tensor(align_loss.data, n_gpus).item()
+                    reduced_loss = \
+                        reduce_tensor(taco_loss.data, n_gpus).item()
+                else:
+                    reduced_loss = reduce_tensor(loss.data, n_gpus).item()
+            else:
+                if hparams.use_align_loss:
+                    reduced_align_loss = align_loss.item()
+                    reduced_loss = taco_loss.item()
+                else:
+                    reduced_loss = loss.item()
+
             if hparams.fp16_run:
                 with amp.scale_loss(loss, optimizer) as scaled_loss:
                     scaled_loss.backward()
@@ -245,10 +288,10 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
 
             if not is_overflow and rank == 0:
                 duration = time.perf_counter() - start
-                print("Train loss {} {:.6f} Grad Norm {:.6f} {:.2f}s/it".format(
-                    iteration, reduced_loss, grad_norm, duration))
+                print("Train loss {} {:.6f} Align loss {:.6f} Grad Norm {:.6f} {:.2f}s/it".format(
+                    iteration, reduced_loss, reduced_align_loss, grad_norm, duration))
                 logger.log_training(
-                    reduced_loss, grad_norm, learning_rate, duration, iteration)
+                    reduced_loss, reduced_align_loss, grad_norm, learning_rate, duration, iteration)
 
             if not is_overflow and (iteration % hparams.iters_per_checkpoint == 0):
                 validate(model, criterion, valset, iteration,
