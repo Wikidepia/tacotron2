@@ -128,7 +128,7 @@ def validate(model, criterion, align_loss, valset, iteration, batch_size, n_gpus
                                 shuffle=False, batch_size=batch_size,
                                 pin_memory=False, collate_fn=collate_fn)
 
-        val_loss = 0.0
+        val_loss, val_align_loss = 0.0, 0.0
         for i, batch in enumerate(val_loader):
             x, y = model.parse_batch(batch)
             y_pred = model(x)
